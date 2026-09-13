@@ -12,14 +12,23 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('port') || 5000;
-  const frontendUrl = configService.get<string>('frontendUrl') || 'http://localhost:3000';
+  const frontendUrl = configService.get<string>('frontendUrl');
+  const allowedOrigins = frontendUrl
+    ? frontendUrl.split(',').map((url) => url.trim()).filter(Boolean)
+    : ['http://localhost:3000'];
 
   // Global prefix: /api/v1
   app.setGlobalPrefix('api/v1');
 
-  // Security & CORS
+  // Security & CORS (Strictly loaded from FRONTEND_URL in .env)
   app.enableCors({
-    origin: [frontendUrl, 'http://localhost:3000'],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g., server-to-server, curl, Postman, mobile apps)
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked: Origin '${origin}' is not authorized in FRONTEND_URL`));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
@@ -56,7 +65,7 @@ async function bootstrap() {
     },
   });
 
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   logger.log(`====================================================`);
   logger.log(`🪵 Wood Business ERP API running on http://localhost:${port}/api/v1`);
   logger.log(`📚 Swagger documentation at http://localhost:${port}/api/docs`);
