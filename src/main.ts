@@ -12,28 +12,49 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('port') || 5000;
-  const frontendUrl = configService.get<string>('frontendUrl');
+  const frontendUrl = configService.get<string>('frontendUrl') || 'http://localhost:3000';
   const allowedOrigins = frontendUrl
-    ? frontendUrl.split(',').map((url) => url.trim()).filter(Boolean)
-    : ['http://localhost:3000'];
+    .split(',')
+    .map((url) => url.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
 
   // Global prefix: /api/v1 (Exclude root and health endpoints so cloud probes work at both /health and /api/v1/health)
   app.setGlobalPrefix('api/v1', {
     exclude: ['health', 'api/v1/health', ''],
   });
 
-  // Security & CORS (Strictly loaded from FRONTEND_URL in .env)
+  // Security & CORS (Loaded from FRONTEND_URL in .env, automatically handles trailing slashes)
   app.enableCors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (e.g., server-to-server, curl, Postman, mobile apps)
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Allow requests with no origin (such as mobile apps, curl, Postman, server-to-server)
+      if (!origin) {
         return callback(null, true);
       }
-      return callback(new Error(`CORS blocked: Origin '${origin}' is not authorized in FRONTEND_URL`));
+
+      const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+
+      const isAllowed = allowedOrigins.some((allowed) => {
+        const cleanAllowed = allowed.replace(/\/+$/, '');
+        return (
+          cleanAllowed === normalizedOrigin ||
+          cleanAllowed === normalizedOrigin.replace(/^https?:\/\//, '') ||
+          `https://${cleanAllowed}` === normalizedOrigin ||
+          `http://${cleanAllowed}` === normalizedOrigin
+        );
+      });
+
+      if (isAllowed) {
+        return callback(null, true);
+      }
+
+      logger.warn(`[CORS] Blocked request from origin '${origin}'. Allowed origins: ${allowedOrigins.join(', ')}`);
+      return callback(null, false);
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'Origin'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
 
   // Global validation pipe
