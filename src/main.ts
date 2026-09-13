@@ -17,8 +17,10 @@ async function bootstrap() {
     ? frontendUrl.split(',').map((url) => url.trim()).filter(Boolean)
     : ['http://localhost:3000'];
 
-  // Global prefix: /api/v1
-  app.setGlobalPrefix('api/v1');
+  // Global prefix: /api/v1 (Exclude root and health endpoints so cloud probes work at both /health and /api/v1/health)
+  app.setGlobalPrefix('api/v1', {
+    exclude: ['health', 'api/v1/health', ''],
+  });
 
   // Security & CORS (Strictly loaded from FRONTEND_URL in .env)
   app.enableCors({

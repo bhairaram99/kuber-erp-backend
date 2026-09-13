@@ -20,6 +20,7 @@ import { ReportsModule } from './reports/reports.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SettingsModule } from './settings/settings.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SettingsModule } from './settings/settings.module';
       load: [configuration],
     }),
     DatabaseModule,
+    HealthModule,
     AuditLogsModule,
     NotificationsModule,
     PermissionsModule,
