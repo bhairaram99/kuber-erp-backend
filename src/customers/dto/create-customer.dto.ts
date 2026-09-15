@@ -1,11 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsEmail, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { ProductStatus } from '../../common/enums/product-status.enum';
+
+const emptyToUndefined = ({ value }: { value: unknown }) =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
 
 export class CreateCustomerDto {
   @ApiPropertyOptional({ example: 'CUST-001' })
   @IsOptional()
+  @Transform(emptyToUndefined)
   @IsString()
   customerCode?: string;
 
@@ -21,6 +25,7 @@ export class CreateCustomerDto {
 
   @ApiPropertyOptional({ example: 'patel@woodcraft.example' })
   @IsOptional()
+  @Transform(emptyToUndefined)
   @IsEmail()
   email?: string;
 
@@ -61,6 +66,7 @@ export class CreateCustomerDto {
 
   @ApiPropertyOptional({ example: '24AAAAA0000A1Z5' })
   @IsOptional()
+  @Transform(emptyToUndefined)
   @IsString()
   taxNumber?: string;
 
