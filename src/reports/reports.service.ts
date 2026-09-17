@@ -286,7 +286,9 @@ export class ReportsService {
           status: 'ACTIVE',
           $expr: { $lte: ['$currentStock', '$minimumStock'] },
         })
-        .select('name sku currentStock minimumStock unit location')
+        .select('name sku currentStock minimumStock unit location woodType grade thickness width length categoryId')
+        .populate('categoryId', 'name')
+        .sort({ currentStock: 1, name: 1 })
         .exec(),
     ]);
 
@@ -302,11 +304,13 @@ export class ReportsService {
     };
   }
 
-  async getDashboardSummary() {
+  async getDashboardSummary(days = 14) {
+    const lookbackDays = [7, 14, 30, 90].includes(Number(days)) ? Number(days) : 14;
     const pnl = await this.getProfitAndLoss({});
     const inv = await this.getInventoryReport();
+    const since = this.trendStartDate(lookbackDays);
 
-    const [recentSales, recentPurchases, customerCount, salesTrend] = await Promise.all([
+    const [recentSales, recentPurchases, customerCount, outstandingAgg, salesTrendRaw] = await Promise.all([
       this.saleModel
         .find({ status: 'CONFIRMED' })
         .populate('customerId', 'name company')
@@ -320,16 +324,26 @@ export class ReportsService {
         .limit(5)
         .exec(),
       this.customerModel.countDocuments({ status: 'ACTIVE' }).exec(),
+      this.customerModel.aggregate([
+        { $match: { status: 'ACTIVE' } },
+        { $group: { _id: null, totalDue: { $sum: '$totalDue' } } },
+      ]),
       this.saleModel.aggregate([
-        { $match: { status: 'CONFIRMED' } },
+        {
+          $match: {
+            status: 'CONFIRMED',
+            saleDate: { $gte: since },
+          },
+        },
         {
           $group: {
-            _id: { $dateToString: { format: '%Y-%m-%d', date: '$saleDate' } },
+            _id: {
+              $dateToString: { format: '%Y-%m-%d', date: '$saleDate', timezone: 'Asia/Kolkata' },
+            },
             sales: { $sum: '$total' },
           },
         },
-        { $sort: { _id: -1 } },
-        { $limit: 14 },
+        { $sort: { _id: 1 } },
       ]),
     ]);
 
@@ -342,11 +356,74 @@ export class ReportsService {
         currentStockValue: inv.overview.totalStockValueCost,
         lowStockCount: inv.lowStockProducts.length,
         totalCustomers: customerCount,
+        customerOutstanding: outstandingAgg[0]?.totalDue || 0,
       },
-      salesTrend: salesTrend.reverse(),
+      salesTrend: this.buildSalesTrend(salesTrendRaw, lookbackDays),
       recentSales,
       recentPurchases,
-      lowStockItems: inv.lowStockProducts.slice(0, 5),
+      lowStockItems: inv.lowStockProducts,
     };
+  }
+
+  private trendStartDate(days: number): Date {
+    const since = new Date();
+    since.setHours(0, 0, 0, 0);
+    const lookback = days <= 31 ? days - 1 : Math.ceil(days / 7) * 7 - 1;
+    since.setDate(since.getDate() - lookback);
+    return since;
+  }
+
+  private toYmd(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  private formatTrendLabel(date: Date, withYear = false): string {
+    return date.toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      ...(withYear ? { year: '2-digit' } : {}),
+    });
+  }
+
+  private buildSalesTrend(rows: Array<{ _id: string; sales: number }>, days: number) {
+    const map = new Map(rows.map((row) => [row._id, Number(row.sales || 0)]));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (days <= 31) {
+      const points: Array<{ _id: string; sales: number }> = [];
+      for (let i = days - 1; i >= 0; i -= 1) {
+        const day = new Date(today);
+        day.setDate(today.getDate() - i);
+        points.push({
+          _id: this.formatTrendLabel(day, days > 14),
+          sales: map.get(this.toYmd(day)) || 0,
+        });
+      }
+      return points;
+    }
+
+    const weeks = Math.ceil(days / 7);
+    const points: Array<{ _id: string; sales: number }> = [];
+    for (let week = weeks - 1; week >= 0; week -= 1) {
+      const weekEnd = new Date(today);
+      weekEnd.setDate(today.getDate() - week * 7);
+      const weekStart = new Date(weekEnd);
+      weekStart.setDate(weekEnd.getDate() - 6);
+      let sales = 0;
+      for (let offset = 0; offset < 7; offset += 1) {
+        const day = new Date(weekStart);
+        day.setDate(weekStart.getDate() + offset);
+        sales += map.get(this.toYmd(day)) || 0;
+      }
+      points.push({
+        _id: this.formatTrendLabel(weekStart, true),
+        sales,
+      });
+    }
+    return points;
   }
 }
