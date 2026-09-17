@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 
 export class ReportQueryDto {
   @ApiPropertyOptional({ example: '2026-01-01' })
@@ -16,4 +17,10 @@ export class ReportQueryDto {
   @IsOptional()
   @IsString()
   groupBy?: 'daily' | 'weekly' | 'monthly' = 'monthly';
+
+  @ApiPropertyOptional({ example: 14, enum: [7, 14, 30, 90], description: 'Dashboard sales trend lookback in days' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([7, 14, 30, 90])
+  days?: number;
 }
