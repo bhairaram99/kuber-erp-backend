@@ -29,6 +29,9 @@ export class Expense {
   @Prop({ default: '', trim: true })
   description: string;
 
+  @Prop({ default: '', trim: true })
+  paidBy: string;
+
   @Prop({ default: '' })
   receipt: string;
 

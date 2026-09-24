@@ -113,7 +113,7 @@ export class CreateProductDto {
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  taxPercentage?: number = 18;
+  taxPercentage?: number = 0;
 
   @ApiPropertyOptional({ example: 100 })
   @IsOptional()
