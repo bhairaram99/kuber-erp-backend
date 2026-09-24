@@ -35,6 +35,11 @@ export class CreateExpenseDto {
   @IsString()
   description?: string;
 
+  @ApiPropertyOptional({ example: 'Ramesh Sharma' })
+  @IsOptional()
+  @IsString()
+  paidBy?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

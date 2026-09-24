@@ -69,8 +69,8 @@ export class Product {
   @Prop({ default: 0, min: 0 })
   wholesalePrice: number;
 
-  @Prop({ default: 18, min: 0 })
-  taxPercentage: number; // GST 18% standard for wood/timber in India
+  @Prop({ default: 0, min: 0 })
+  taxPercentage: number;
 
   // Inventory
   @Prop({ default: 0, min: 0 })

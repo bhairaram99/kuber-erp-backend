@@ -310,7 +310,7 @@ export class ReportsService {
     const inv = await this.getInventoryReport();
     const since = this.trendStartDate(lookbackDays);
 
-    const [recentSales, recentPurchases, customerCount, outstandingAgg, salesTrendRaw] = await Promise.all([
+    const [recentSales, recentPurchases, customerCount, outstandingAgg, outstandingAccounts, salesTrendRaw] = await Promise.all([
       this.saleModel
         .find({ status: 'CONFIRMED' })
         .populate('customerId', 'name company')
@@ -328,6 +328,13 @@ export class ReportsService {
         { $match: { status: 'ACTIVE' } },
         { $group: { _id: null, totalDue: { $sum: '$totalDue' } } },
       ]),
+      this.customerModel
+        .find({ status: 'ACTIVE', totalDue: { $gt: 0 } })
+        .select('name company customerType phone totalDue')
+        .sort({ totalDue: -1 })
+        .limit(200)
+        .lean()
+        .exec(),
       this.saleModel.aggregate([
         {
           $match: {
@@ -362,6 +369,7 @@ export class ReportsService {
       recentSales,
       recentPurchases,
       lowStockItems: inv.lowStockProducts,
+      outstandingAccounts,
     };
   }
 
