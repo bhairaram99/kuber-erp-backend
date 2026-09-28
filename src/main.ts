@@ -2,9 +2,14 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { setServers } from 'node:dns';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseTransformInterceptor } from './common/interceptors/response-transform.interceptor';
+
+// mongodb+srv looks up a DNS SRV record. On this PC, Node's resolver is
+// refused by the router (querySrv ECONNREFUSED) even though Atlas is up.
+setServers(['8.8.8.8', '1.1.1.1']);
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');

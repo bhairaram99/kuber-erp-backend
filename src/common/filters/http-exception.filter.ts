@@ -34,6 +34,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
           : resObj.message || exception.message;
         errorCode = resObj.error || exception.name || 'HTTP_EXCEPTION';
       }
+    } else if (isMongoCastError(exception)) {
+      status = HttpStatus.BAD_REQUEST;
+      message = 'That record id is not valid.';
+      errorCode = 'INVALID_ID';
+      this.logger.warn(`Rejected invalid id: ${exception.message}`);
     } else if (exception instanceof Error) {
       message = exception.message;
       errorCode = exception.name || 'UNKNOWN_ERROR';
@@ -46,4 +51,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
       errorCode: errorCode.toUpperCase().replace(/\s+/g, '_'),
     });
   }
+}
+
+function isMongoCastError(exception: unknown): exception is Error {
+  return (
+    exception instanceof Error &&
+    exception.name === 'CastError' &&
+    exception.message.includes('ObjectId')
+  );
 }
