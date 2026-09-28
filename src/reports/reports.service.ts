@@ -357,6 +357,7 @@ export class ReportsService {
     return {
       kpi: {
         totalSales: pnl.revenue,
+        costOfGoodsSold: pnl.costOfGoodsSold,
         grossProfit: pnl.grossProfit,
         netProfit: pnl.netProfit,
         totalExpenses: pnl.operatingExpenses,
