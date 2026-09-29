@@ -241,4 +241,51 @@ export class PurchasesService {
   async getRecentPurchases(limit = 5) {
     return this.purchasesRepository.getRecentPurchases(limit);
   }
+
+  async delete(id: string, userId?: string) {
+    const purchase = await this.findById(id);
+
+    for (const item of purchase.items) {
+      const productId = item.productId.toString();
+      const updated = await this.productsService.atomicUpdateStock(productId, -item.quantity);
+      await this.inventoryService.recordTransaction({
+        productId,
+        type: InventoryTransactionType.PURCHASE_RETURN,
+        quantity: item.quantity,
+        previousStock: updated.currentStock + item.quantity,
+        newStock: updated.currentStock,
+        referenceType: 'PURCHASE_RETURN',
+        referenceId: purchase.purchaseNumber,
+        reason: `Removed with purchase order ${purchase.purchaseNumber}`,
+        createdBy: userId,
+      });
+    }
+
+    const supplier = purchase.supplierId as any;
+    const supplierId = supplier?._id ? supplier._id.toString() : purchase.supplierId.toString();
+    await this.suppliersService.updateFinancials(supplierId, -purchase.total, -purchase.paidAmount);
+
+    await this.transactionsService.recordTransaction({
+      type: CentralTransactionType.PURCHASE_RETURN,
+      referenceType: 'PURCHASE_DELETE',
+      referenceId: purchase.purchaseNumber,
+      amount: purchase.total,
+      supplierId,
+      description: `Purchase order ${purchase.purchaseNumber} deleted and stock reversed`,
+      createdBy: userId,
+    });
+
+    await this.purchasesRepository.delete(id);
+
+    if (this.auditLogsService) {
+      await this.auditLogsService.log({
+        userId,
+        action: 'DELETE',
+        module: 'PURCHASES',
+        entityType: 'Purchase',
+        entityId: id,
+        metadata: { purchaseNumber: purchase.purchaseNumber },
+      });
+    }
+  }
 }
