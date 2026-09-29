@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -51,6 +52,14 @@ export class PurchasesController {
   @ApiOperation({ summary: 'Get purchase details and line items by ID' })
   async findById(@Param('id') id: string) {
     return this.purchasesService.findById(id);
+  }
+
+  @Delete(':id')
+  @RequirePermission(PERMISSIONS.PURCHASES_CANCEL)
+  @ApiOperation({ summary: 'Delete a purchase order and reverse its stock and supplier balance' })
+  async delete(@Param('id') id: string, @CurrentUser('userId') userId: string) {
+    await this.purchasesService.delete(id, userId);
+    return { message: 'Purchase deleted successfully' };
   }
 
   @Post()

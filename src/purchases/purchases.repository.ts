@@ -54,6 +54,10 @@ export class PurchasesRepository {
     return this.purchaseModel.findByIdAndUpdate(id, { $set: data }, { new: true }).exec();
   }
 
+  async delete(id: string): Promise<PurchaseDocument | null> {
+    return this.purchaseModel.findByIdAndDelete(id).exec();
+  }
+
   async count(): Promise<number> {
     return this.purchaseModel.countDocuments().exec();
   }
