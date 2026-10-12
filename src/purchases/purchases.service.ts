@@ -178,6 +178,123 @@ export class PurchasesService {
     return this.purchasesRepository.findById(purchase._id.toString());
   }
 
+  async update(id: string, dto: CreatePurchaseDto, userId?: string) {
+    const purchase = await this.findById(id);
+    const supplier = await this.suppliersService.findById(dto.supplierId);
+
+    const processedItems: any[] = [];
+    let subtotal = 0;
+
+    for (const itemDto of dto.items) {
+      const product = await this.productsService.findById(itemDto.productId);
+      const itemSubtotal = itemDto.quantity * itemDto.purchasePrice;
+      const itemDiscount = itemDto.discount || 0;
+      const itemTax = (itemSubtotal - itemDiscount) * ((itemDto.taxPercentage || 0) / 100);
+      const itemTotal = itemSubtotal - itemDiscount + itemTax;
+      subtotal += itemSubtotal;
+      processedItems.push({
+        productId: product._id,
+        productNameSnapshot: product.name,
+        skuSnapshot: product.sku,
+        unitSnapshot: product.unit || 'cft',
+        quantity: itemDto.quantity,
+        purchasePrice: itemDto.purchasePrice,
+        tax: itemTax,
+        discount: itemDiscount,
+        subtotal: itemSubtotal,
+        total: itemTotal,
+      });
+    }
+
+    const overallDiscount = dto.discount || 0;
+    const totalTax = processedItems.reduce((acc, it) => acc + it.tax, 0);
+    const total = subtotal - overallDiscount + totalTax;
+    const paidAmount = dto.paidAmount || 0;
+    const dueAmount = Math.max(0, total - paidAmount);
+    let paymentStatus = PaymentStatus.DUE;
+    if (paidAmount >= total) {
+      paymentStatus = PaymentStatus.PAID;
+    } else if (paidAmount > 0) {
+      paymentStatus = PaymentStatus.PARTIAL;
+    }
+    const purchaseDate = dto.purchaseDate ? new Date(dto.purchaseDate) : purchase.purchaseDate;
+
+    for (const item of purchase.items) {
+      const productId = item.productId.toString();
+      const updated = await this.productsService.atomicUpdateStock(productId, -item.quantity);
+      await this.inventoryService.recordTransaction({
+        productId,
+        type: InventoryTransactionType.PURCHASE_RETURN,
+        quantity: item.quantity,
+        previousStock: updated.currentStock + item.quantity,
+        newStock: updated.currentStock,
+        referenceType: 'PURCHASE_RETURN',
+        referenceId: purchase.purchaseNumber,
+        reason: `Reversed while editing purchase order ${purchase.purchaseNumber}`,
+        createdBy: userId,
+      });
+    }
+
+    const previousSupplier = purchase.supplierId as any;
+    const previousSupplierId = previousSupplier?._id
+      ? previousSupplier._id.toString()
+      : purchase.supplierId.toString();
+    await this.suppliersService.updateFinancials(
+      previousSupplierId,
+      -purchase.total,
+      -purchase.paidAmount,
+    );
+
+    for (const item of processedItems) {
+      const updatedProduct = await this.productsService.atomicUpdateStock(
+        item.productId.toString(),
+        item.quantity,
+      );
+      await this.inventoryService.recordTransaction({
+        productId: item.productId.toString(),
+        type: InventoryTransactionType.PURCHASE,
+        quantity: item.quantity,
+        previousStock: updatedProduct.currentStock - item.quantity,
+        newStock: updatedProduct.currentStock,
+        referenceType: 'PURCHASE',
+        referenceId: purchase.purchaseNumber,
+        reason: `Updated on purchase order ${purchase.purchaseNumber}`,
+        createdBy: userId,
+      });
+    }
+
+    await this.purchasesRepository.update(id, {
+      supplierId: dto.supplierId,
+      items: processedItems,
+      subtotal,
+      discount: overallDiscount,
+      tax: totalTax,
+      total,
+      paidAmount,
+      dueAmount,
+      paymentStatus,
+      paymentMethod: dto.paymentMethod || purchase.paymentMethod,
+      purchaseDate,
+      notes: dto.notes || '',
+      updatedBy: userId,
+    });
+
+    await this.suppliersService.updateFinancials(dto.supplierId, total, paidAmount);
+
+    if (this.auditLogsService) {
+      await this.auditLogsService.log({
+        userId,
+        action: 'UPDATE',
+        module: 'PURCHASES',
+        entityType: 'Purchase',
+        entityId: id,
+        metadata: { purchaseNumber: purchase.purchaseNumber, supplier: supplier.name },
+      });
+    }
+
+    return this.purchasesRepository.findById(id);
+  }
+
   async findPaginated(
     query: PaginationQueryDto,
     supplierId?: string,
