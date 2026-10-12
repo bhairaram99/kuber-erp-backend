@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Patch,
   Param,
   Post,
   Query,
@@ -52,6 +53,17 @@ export class PurchasesController {
   @ApiOperation({ summary: 'Get purchase details and line items by ID' })
   async findById(@Param('id') id: string) {
     return this.purchasesService.findById(id);
+  }
+
+  @Patch(':id')
+  @RequirePermission(PERMISSIONS.PURCHASES_UPDATE)
+  @ApiOperation({ summary: 'Update a purchase order and adjust stock and supplier balance' })
+  async update(
+    @Param('id') id: string,
+    @Body() dto: CreatePurchaseDto,
+    @CurrentUser('userId') userId: string,
+  ) {
+    return this.purchasesService.update(id, dto, userId);
   }
 
   @Delete(':id')
