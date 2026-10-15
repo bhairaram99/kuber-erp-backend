@@ -127,6 +127,7 @@ export class SalesService {
 
     const sale = await this.salesRepository.create({
       invoiceNumber,
+      billNumber: dto.billNumber?.trim() || '',
       customerId: dto.customerId,
       items: processedItems,
       subtotal,
@@ -193,6 +194,157 @@ export class SalesService {
     return this.salesRepository.findById(sale._id.toString());
   }
 
+  async update(id: string, dto: CreateSaleDto, userId?: string) {
+    const sale = await this.findById(id);
+    if (sale.status === OrderStatus.CANCELLED) {
+      throw new BadRequestException('A cancelled invoice cannot be edited.');
+    }
+
+    const customer = await this.customersService.findById(dto.customerId);
+    const oldQty = new Map<string, number>();
+    for (const item of sale.items) {
+      const productId = item.productId.toString();
+      oldQty.set(productId, (oldQty.get(productId) || 0) + item.quantity);
+    }
+
+    const processedItems: any[] = [];
+    let subtotal = 0;
+    let costOfGoodsSold = 0;
+    const newQty = new Map<string, { quantity: number; name: string; sku: string; stock: number }>();
+
+    for (const itemDto of dto.items) {
+      const product = await this.productsService.findById(itemDto.productId);
+      const productId = product._id.toString();
+      const existing = newQty.get(productId);
+      newQty.set(productId, {
+        quantity: (existing?.quantity || 0) + itemDto.quantity,
+        name: product.name,
+        sku: product.sku,
+        stock: product.currentStock,
+      });
+
+      const itemSubtotal = itemDto.quantity * itemDto.sellingPrice;
+      const itemDiscount = itemDto.discount || 0;
+      const itemTax = (itemSubtotal - itemDiscount) * ((itemDto.taxPercentage || 0) / 100);
+      const itemTotal = itemSubtotal - itemDiscount + itemTax;
+      subtotal += itemSubtotal;
+      costOfGoodsSold += itemDto.quantity * product.purchasePrice;
+
+      processedItems.push({
+        productId: product._id,
+        productNameSnapshot: product.name,
+        skuSnapshot: product.sku,
+        unitSnapshot: product.unit || 'cft',
+        quantity: itemDto.quantity,
+        purchasePriceSnapshot: product.purchasePrice,
+        sellingPrice: itemDto.sellingPrice,
+        discount: itemDiscount,
+        tax: itemTax,
+        subtotal: itemSubtotal,
+        total: itemTotal,
+      });
+    }
+
+    for (const [productId, next] of newQty) {
+      const available = next.stock + (oldQty.get(productId) || 0);
+      if (next.quantity > available) {
+        throw new BadRequestException(
+          `Insufficient stock for '${next.name}' (SKU: ${next.sku}). Available: ${available}, Requested: ${next.quantity}`,
+        );
+      }
+    }
+
+    for (const item of sale.items) {
+      const productId = item.productId.toString();
+      const updated = await this.productsService.atomicUpdateStock(productId, item.quantity);
+      await this.inventoryService.recordTransaction({
+        productId,
+        type: InventoryTransactionType.SALE_RETURN,
+        quantity: item.quantity,
+        previousStock: updated.currentStock - item.quantity,
+        newStock: updated.currentStock,
+        referenceType: 'SALE_RETURN',
+        referenceId: sale.invoiceNumber,
+        reason: `Reversed while editing invoice ${sale.invoiceNumber}`,
+        createdBy: userId,
+      });
+    }
+
+    const previousCustomer = sale.customerId as any;
+    const previousCustomerId = previousCustomer?._id
+      ? previousCustomer._id.toString()
+      : sale.customerId.toString();
+    await this.customersService.updateFinancials(previousCustomerId, -sale.total, -sale.paidAmount);
+
+    for (const item of processedItems) {
+      const updatedProduct = await this.productsService.atomicUpdateStock(
+        item.productId.toString(),
+        -item.quantity,
+      );
+      await this.inventoryService.recordTransaction({
+        productId: item.productId.toString(),
+        type: InventoryTransactionType.SALE,
+        quantity: -item.quantity,
+        previousStock: updatedProduct.currentStock + item.quantity,
+        newStock: updatedProduct.currentStock,
+        referenceType: 'SALE',
+        referenceId: sale.invoiceNumber,
+        reason: `Updated on invoice ${sale.invoiceNumber}`,
+        createdBy: userId,
+      });
+    }
+
+    const overallDiscount = dto.discount || 0;
+    const totalTax = processedItems.reduce((acc, it) => acc + it.tax, 0);
+    const total = subtotal - overallDiscount + totalTax;
+    const paidAmount = dto.paidAmount || 0;
+    const dueAmount = Math.max(0, total - paidAmount);
+    let paymentStatus = PaymentStatus.DUE;
+    if (paidAmount >= total) {
+      paymentStatus = PaymentStatus.PAID;
+    } else if (paidAmount > 0) {
+      paymentStatus = PaymentStatus.PARTIAL;
+    }
+
+    const netRevenue = subtotal - overallDiscount;
+    const grossProfit = netRevenue - costOfGoodsSold;
+    const saleDate = dto.saleDate ? new Date(dto.saleDate) : sale.saleDate;
+
+    await this.salesRepository.update(id, {
+      billNumber: dto.billNumber?.trim() ?? sale.billNumber ?? '',
+      customerId: dto.customerId,
+      items: processedItems,
+      subtotal,
+      discount: overallDiscount,
+      tax: totalTax,
+      total,
+      costOfGoodsSold,
+      grossProfit,
+      paidAmount,
+      dueAmount,
+      paymentStatus,
+      paymentMethod: dto.paymentMethod || sale.paymentMethod,
+      saleDate,
+      notes: dto.notes || '',
+      updatedBy: userId,
+    });
+
+    await this.customersService.updateFinancials(dto.customerId, total, paidAmount);
+
+    if (this.auditLogsService) {
+      await this.auditLogsService.log({
+        userId,
+        action: 'UPDATE',
+        module: 'SALES',
+        entityType: 'Sale',
+        entityId: id,
+        metadata: { invoiceNumber: sale.invoiceNumber, customer: customer.name },
+      });
+    }
+
+    return this.salesRepository.findById(id);
+  }
+
   async findPaginated(
     query: PaginationQueryDto,
     customerId?: string,
@@ -214,7 +366,10 @@ export class SalesService {
       filter.paymentStatus = paymentStatus;
     }
     if (query.search) {
-      filter.invoiceNumber = { $regex: query.search, $options: 'i' };
+      filter.$or = [
+        { billNumber: { $regex: query.search, $options: 'i' } },
+        { invoiceNumber: { $regex: query.search, $options: 'i' } },
+      ];
     }
     if (query.from || query.to) {
       filter.saleDate = {};
