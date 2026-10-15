@@ -51,6 +51,9 @@ export class Sale {
   @Prop({ required: true, unique: true, uppercase: true, trim: true, index: true })
   invoiceNumber: string;
 
+  @Prop({ default: '', trim: true })
+  billNumber: string;
+
   @Prop({
     type: MongooseSchema.Types.ObjectId,
     ref: Customer.name,

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -51,6 +52,17 @@ export class SalesController {
   @ApiOperation({ summary: 'Get sale details and line items by ID' })
   async findById(@Param('id') id: string) {
     return this.salesService.findById(id);
+  }
+
+  @Patch(':id')
+  @RequirePermission(PERMISSIONS.SALES_UPDATE)
+  @ApiOperation({ summary: 'Update a sale invoice and adjust stock and customer balance' })
+  async update(
+    @Param('id') id: string,
+    @Body() dto: CreateSaleDto,
+    @CurrentUser('userId') userId: string,
+  ) {
+    return this.salesService.update(id, dto, userId);
   }
 
   @Post()

@@ -52,6 +52,11 @@ export class CreateSaleDto {
   @IsString()
   invoiceNumber?: string;
 
+  @ApiPropertyOptional({ example: '8/98', description: 'Bill number entered on the invoice, such as 8/98 or 1/999' })
+  @IsOptional()
+  @IsString()
+  billNumber?: string;
+
   @ApiProperty({ example: '64e8b392b4a5f334d701a234' })
   @IsNotEmpty()
   @IsString()
