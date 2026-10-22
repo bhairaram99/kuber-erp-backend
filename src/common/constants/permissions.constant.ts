@@ -47,6 +47,7 @@ export const PERMISSIONS = {
   // Payments
   PAYMENTS_VIEW: 'payments.view',
   PAYMENTS_CREATE: 'payments.create',
+  PAYMENTS_UPDATE: 'payments.update',
 
   // Expenses
   EXPENSES_VIEW: 'expenses.view',

@@ -80,8 +80,8 @@ export class Sale {
   @Prop({ default: 0, min: 0 })
   costOfGoodsSold: number; // COGS = sum(quantity * purchasePriceSnapshot)
 
-  @Prop({ default: 0, min: 0 })
-  grossProfit: number; // total - COGS
+  @Prop({ default: 0 })
+  grossProfit: number; // net revenue minus cost; can be negative when sold below cost
 
   @Prop({ default: 0, min: 0 })
   paidAmount: number;
