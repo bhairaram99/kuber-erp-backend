@@ -101,6 +101,20 @@ export class TransactionsService {
     });
   }
 
+  async updateByReference(
+    referenceType: string,
+    referenceId: string,
+    data: Partial<{
+      type: CentralTransactionType;
+      amount: number;
+      customerId: string | null;
+      supplierId: string | null;
+      description: string;
+    }>,
+  ) {
+    return this.transactionsRepository.updateByReference(referenceType, referenceId, data);
+  }
+
   async getRecent(limit = 8) {
     return this.transactionsRepository.getRecent(limit);
   }

@@ -51,6 +51,16 @@ export class TransactionsRepository {
       .exec();
   }
 
+  async updateByReference(
+    referenceType: string,
+    referenceId: string,
+    data: Partial<CentralTransaction>,
+  ): Promise<void> {
+    await this.transactionModel
+      .updateMany({ referenceType, referenceId }, { $set: data })
+      .exec();
+  }
+
   async count(): Promise<number> {
     return this.transactionModel.countDocuments().exec();
   }

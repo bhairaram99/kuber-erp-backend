@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PaymentsRepository } from './payments.repository';
 import { CustomersService } from '../customers/customers.service';
 import { SuppliersService } from '../suppliers/suppliers.service';
@@ -68,6 +68,54 @@ export class PaymentsService {
     return payment;
   }
 
+  async update(id: string, dto: CreatePaymentDto) {
+    const existing = await this.paymentsRepository.findById(id);
+    if (!existing) {
+      throw new NotFoundException('Payment not found');
+    }
+
+    const previousCustomerId = partyId(existing.customerId);
+    const previousSupplierId = partyId(existing.supplierId);
+    if (existing.type === PaymentType.RECEIVED && previousCustomerId) {
+      await this.customersService.updateFinancials(previousCustomerId, 0, -existing.amount);
+    } else if (existing.type === PaymentType.SENT && previousSupplierId) {
+      await this.suppliersService.updateFinancials(previousSupplierId, 0, -existing.amount);
+    }
+
+    const paymentDate = dto.paymentDate ? new Date(dto.paymentDate) : existing.paymentDate;
+    const customerId = dto.type === PaymentType.RECEIVED ? dto.customerId || null : null;
+    const supplierId = dto.type === PaymentType.SENT ? dto.supplierId || null : null;
+
+    await this.paymentsRepository.update(id, {
+      type: dto.type,
+      customerId,
+      supplierId,
+      amount: dto.amount,
+      paymentMethod: dto.paymentMethod,
+      paymentDate,
+      notes: dto.notes || '',
+    });
+
+    if (dto.type === PaymentType.RECEIVED && customerId) {
+      await this.customersService.updateFinancials(customerId, 0, dto.amount);
+    } else if (dto.type === PaymentType.SENT && supplierId) {
+      await this.suppliersService.updateFinancials(supplierId, 0, dto.amount);
+    }
+
+    await this.transactionsService.updateByReference('PAYMENT', existing.paymentNumber, {
+      type:
+        dto.type === PaymentType.RECEIVED
+          ? CentralTransactionType.PAYMENT_RECEIVED
+          : CentralTransactionType.PAYMENT_SENT,
+      amount: dto.amount,
+      customerId,
+      supplierId,
+      description: `Payment updated via ${dto.paymentMethod}. ${dto.notes || ''}`,
+    });
+
+    return this.paymentsRepository.findById(id);
+  }
+
   async findPaginated(
     query: PaginationQueryDto,
     type?: string,
@@ -120,4 +168,12 @@ export class PaymentsService {
   async findById(id: string) {
     return this.paymentsRepository.findById(id);
   }
+}
+
+function partyId(value: unknown): string {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  const record = value as { _id?: { toString(): string } | string };
+  if (!record._id) return '';
+  return typeof record._id === 'string' ? record._id : record._id.toString();
 }

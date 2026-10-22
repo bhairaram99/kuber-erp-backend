@@ -48,6 +48,10 @@ export class PaymentsRepository {
       .exec();
   }
 
+  async update(id: string, data: Partial<Payment>): Promise<PaymentDocument | null> {
+    return this.paymentModel.findByIdAndUpdate(id, { $set: data }, { new: true }).exec();
+  }
+
   async count(): Promise<number> {
     return this.paymentModel.countDocuments().exec();
   }

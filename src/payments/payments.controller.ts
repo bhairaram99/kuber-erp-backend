@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -36,6 +36,13 @@ export class PaymentsController {
   @ApiOperation({ summary: 'Get payment details by ID' })
   async findById(@Param('id') id: string) {
     return this.paymentsService.findById(id);
+  }
+
+  @Patch(':id')
+  @RequirePermission(PERMISSIONS.PAYMENTS_UPDATE)
+  @ApiOperation({ summary: 'Update a payment and adjust the customer or supplier balance' })
+  async update(@Param('id') id: string, @Body() dto: CreatePaymentDto) {
+    return this.paymentsService.update(id, dto);
   }
 
   @Post()

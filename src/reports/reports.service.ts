@@ -304,11 +304,13 @@ export class ReportsService {
     };
   }
 
-  async getDashboardSummary(days = 14) {
+  async getDashboardSummary(days = 14, from?: string, to?: string) {
+    const custom = this.parseTrendRange(from, to);
     const lookbackDays = [7, 14, 30, 90].includes(Number(days)) ? Number(days) : 14;
     const pnl = await this.getProfitAndLoss({});
     const inv = await this.getInventoryReport();
-    const since = this.trendStartDate(lookbackDays);
+    const since = custom?.since || this.trendStartDate(lookbackDays);
+    const until = custom?.until;
 
     const [recentSales, recentPurchases, customerCount, outstandingAgg, outstandingAccounts, salesTrendRaw] = await Promise.all([
       this.saleModel
@@ -339,7 +341,7 @@ export class ReportsService {
         {
           $match: {
             status: 'CONFIRMED',
-            saleDate: { $gte: since },
+            saleDate: until ? { $gte: since, $lte: until } : { $gte: since },
           },
         },
         {
@@ -366,11 +368,25 @@ export class ReportsService {
         totalCustomers: customerCount,
         customerOutstanding: outstandingAgg[0]?.totalDue || 0,
       },
-      salesTrend: this.buildSalesTrend(salesTrendRaw, lookbackDays),
+      salesTrend: custom
+        ? this.buildSalesTrendRange(salesTrendRaw, custom.since, custom.until)
+        : this.buildSalesTrend(salesTrendRaw, lookbackDays),
       recentSales,
       recentPurchases,
       lowStockItems: inv.lowStockProducts,
       outstandingAccounts,
+    };
+  }
+
+  private parseTrendRange(from?: string, to?: string): { since: Date; until: Date } | null {
+    if (!from || !to) return null;
+    const since = new Date(`${from.slice(0, 10)}T00:00:00`);
+    const until = new Date(`${to.slice(0, 10)}T23:59:59`);
+    if (Number.isNaN(since.getTime()) || Number.isNaN(until.getTime())) return null;
+    if (since <= until) return { since, until };
+    return {
+      since: new Date(`${to.slice(0, 10)}T00:00:00`),
+      until: new Date(`${from.slice(0, 10)}T23:59:59`),
     };
   }
 
@@ -432,6 +448,46 @@ export class ReportsService {
         _id: this.formatTrendLabel(weekStart, true),
         sales,
       });
+    }
+    return points;
+  }
+
+  private buildSalesTrendRange(
+    rows: Array<{ _id: string; sales: number }>,
+    since: Date,
+    until: Date,
+  ) {
+    const map = new Map(rows.map((row) => [row._id, Number(row.sales || 0)]));
+    const start = new Date(since);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(until);
+    end.setHours(0, 0, 0, 0);
+    const span = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+    const withYear = span > 14;
+
+    if (span <= 45) {
+      const points: Array<{ _id: string; sales: number }> = [];
+      for (let offset = 0; offset < span; offset += 1) {
+        const day = new Date(start);
+        day.setDate(start.getDate() + offset);
+        points.push({
+          _id: this.formatTrendLabel(day, withYear),
+          sales: map.get(this.toYmd(day)) || 0,
+        });
+      }
+      return points;
+    }
+
+    const points: Array<{ _id: string; sales: number }> = [];
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      let sales = 0;
+      const label = this.formatTrendLabel(cursor, true);
+      for (let offset = 0; offset < 7 && cursor <= end; offset += 1) {
+        sales += map.get(this.toYmd(cursor)) || 0;
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      points.push({ _id: label, sales });
     }
     return points;
   }

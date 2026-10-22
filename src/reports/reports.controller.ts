@@ -18,7 +18,7 @@ export class ReportsController {
   @RequirePermission(PERMISSIONS.DASHBOARD_VIEW)
   @ApiOperation({ summary: 'Get aggregated dashboard summary KPIs and trends' })
   async getDashboardSummary(@Query() query: ReportQueryDto) {
-    return this.reportsService.getDashboardSummary(query.days);
+    return this.reportsService.getDashboardSummary(query.days, query.from, query.to);
   }
 
   @Get('profit-loss')
