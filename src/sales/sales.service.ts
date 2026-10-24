@@ -19,6 +19,10 @@ import { InventoryTransactionType } from '../common/enums/inventory-transaction-
 import { CentralTransactionType } from '../common/enums/transaction-type.enum';
 import { OrderStatus } from '../common/enums/order-status.enum';
 
+function money(amount: number): number {
+  return Math.round((Number(amount) + Number.EPSILON) * 100) / 100;
+}
+
 @Injectable()
 export class SalesService {
   constructor(
@@ -61,14 +65,14 @@ export class SalesService {
         );
       }
 
-      const itemSubtotal = itemDto.quantity * itemDto.sellingPrice;
-      const itemDiscount = itemDto.discount || 0;
-      const itemTax = (itemSubtotal - itemDiscount) * ((itemDto.taxPercentage || 0) / 100);
-      const itemTotal = itemSubtotal - itemDiscount + itemTax;
-      const itemCogs = itemDto.quantity * product.purchasePrice;
+      const itemSubtotal = money(itemDto.quantity * itemDto.sellingPrice);
+      const itemDiscount = money(itemDto.discount || 0);
+      const itemTax = money((itemSubtotal - itemDiscount) * ((itemDto.taxPercentage || 0) / 100));
+      const itemTotal = money(itemSubtotal - itemDiscount + itemTax);
+      const itemCogs = money(itemDto.quantity * product.purchasePrice);
 
-      subtotal += itemSubtotal;
-      costOfGoodsSold += itemCogs;
+      subtotal = money(subtotal + itemSubtotal);
+      costOfGoodsSold = money(costOfGoodsSold + itemCogs);
 
       processedItems.push({
         productId: product._id,
@@ -85,12 +89,12 @@ export class SalesService {
       });
     }
 
-    const overallDiscount = dto.discount || 0;
-    const totalTax = processedItems.reduce((acc, it) => acc + it.tax, 0);
-    const total = subtotal - overallDiscount + totalTax;
+    const overallDiscount = money(dto.discount || 0);
+    const totalTax = money(processedItems.reduce((acc, it) => acc + it.tax, 0));
+    const total = money(Math.max(0, subtotal - overallDiscount + totalTax));
 
-    const paidAmount = dto.paidAmount || 0;
-    const dueAmount = Math.max(0, total - paidAmount);
+    const paidAmount = money(dto.paidAmount || 0);
+    const dueAmount = money(Math.max(0, total - paidAmount));
 
     let paymentStatus = PaymentStatus.DUE;
     if (paidAmount >= total) {
@@ -122,8 +126,8 @@ export class SalesService {
     }
 
     // Step 3: Create Sale Document (Gross Profit = Net Sales Revenue minus COGS, excluding tax liabilities)
-    const netRevenue = subtotal - overallDiscount;
-    const grossProfit = netRevenue - costOfGoodsSold;
+    const netRevenue = money(subtotal - overallDiscount);
+    const grossProfit = money(netRevenue - costOfGoodsSold);
 
     const sale = await this.salesRepository.create({
       invoiceNumber,
@@ -223,12 +227,12 @@ export class SalesService {
         stock: product.currentStock,
       });
 
-      const itemSubtotal = itemDto.quantity * itemDto.sellingPrice;
-      const itemDiscount = itemDto.discount || 0;
-      const itemTax = (itemSubtotal - itemDiscount) * ((itemDto.taxPercentage || 0) / 100);
-      const itemTotal = itemSubtotal - itemDiscount + itemTax;
-      subtotal += itemSubtotal;
-      costOfGoodsSold += itemDto.quantity * product.purchasePrice;
+      const itemSubtotal = money(itemDto.quantity * itemDto.sellingPrice);
+      const itemDiscount = money(itemDto.discount || 0);
+      const itemTax = money((itemSubtotal - itemDiscount) * ((itemDto.taxPercentage || 0) / 100));
+      const itemTotal = money(itemSubtotal - itemDiscount + itemTax);
+      subtotal = money(subtotal + itemSubtotal);
+      costOfGoodsSold = money(costOfGoodsSold + itemDto.quantity * product.purchasePrice);
 
       processedItems.push({
         productId: product._id,
@@ -294,11 +298,11 @@ export class SalesService {
       });
     }
 
-    const overallDiscount = dto.discount || 0;
-    const totalTax = processedItems.reduce((acc, it) => acc + it.tax, 0);
-    const total = subtotal - overallDiscount + totalTax;
-    const paidAmount = dto.paidAmount || 0;
-    const dueAmount = Math.max(0, total - paidAmount);
+    const overallDiscount = money(dto.discount || 0);
+    const totalTax = money(processedItems.reduce((acc, it) => acc + it.tax, 0));
+    const total = money(Math.max(0, subtotal - overallDiscount + totalTax));
+    const paidAmount = money(dto.paidAmount || 0);
+    const dueAmount = money(Math.max(0, total - paidAmount));
     let paymentStatus = PaymentStatus.DUE;
     if (paidAmount >= total) {
       paymentStatus = PaymentStatus.PAID;
@@ -306,8 +310,8 @@ export class SalesService {
       paymentStatus = PaymentStatus.PARTIAL;
     }
 
-    const netRevenue = subtotal - overallDiscount;
-    const grossProfit = netRevenue - costOfGoodsSold;
+    const netRevenue = money(subtotal - overallDiscount);
+    const grossProfit = money(netRevenue - costOfGoodsSold);
     const saleDate = dto.saleDate ? new Date(dto.saleDate) : sale.saleDate;
 
     await this.salesRepository.update(id, {
