@@ -47,6 +47,19 @@ export class SalesController {
     return this.salesService.getRecentSales(limit || 5);
   }
 
+  @Get('bill-number/available')
+  @RequirePermission(PERMISSIONS.SALES_VIEW)
+  @ApiOperation({ summary: 'Check whether a bill number is still free' })
+  @ApiQuery({ name: 'billNumber', required: true })
+  @ApiQuery({ name: 'excludeId', required: false })
+  async billNumberAvailable(
+    @Query('billNumber') billNumber?: string,
+    @Query('excludeId') excludeId?: string,
+  ) {
+    const available = await this.salesService.isBillNumberAvailable(billNumber, excludeId);
+    return { available };
+  }
+
   @Get(':id')
   @RequirePermission(PERMISSIONS.SALES_VIEW)
   @ApiOperation({ summary: 'Get sale details and line items by ID' })

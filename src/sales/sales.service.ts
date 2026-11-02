@@ -51,6 +51,8 @@ export class SalesService {
       throw new ConflictException(`Invoice number '${invoiceNumber}' already exists`);
     }
 
+    await this.assertBillNumberAvailable(dto.billNumber);
+
     // Step 1: Validate all items & stock before mutating
     const processedItems: any[] = [];
     let subtotal = 0;
@@ -203,6 +205,8 @@ export class SalesService {
     if (sale.status === OrderStatus.CANCELLED) {
       throw new BadRequestException('A cancelled invoice cannot be edited.');
     }
+
+    await this.assertBillNumberAvailable(dto.billNumber, id);
 
     const customer = await this.customersService.findById(dto.customerId);
     const oldQty = new Map<string, number>();
@@ -464,5 +468,23 @@ export class SalesService {
 
   async getRecentSales(limit = 5) {
     return this.salesRepository.getRecentSales(limit);
+  }
+
+  async isBillNumberAvailable(billNumber?: string, excludeId?: string): Promise<boolean> {
+    const trimmed = billNumber?.trim() || '';
+    if (!trimmed) return true;
+    const taken = await this.salesRepository.findByBillNumber(trimmed, excludeId);
+    return !taken;
+  }
+
+  private async assertBillNumberAvailable(billNumber?: string, excludeId?: string) {
+    const trimmed = billNumber?.trim() || '';
+    if (!trimmed) return;
+    const available = await this.isBillNumberAvailable(trimmed, excludeId);
+    if (!available) {
+      throw new ConflictException(
+        `Bill number '${trimmed}' is already used. Enter a different bill number.`,
+      );
+    }
   }
 }

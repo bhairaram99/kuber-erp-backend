@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { SalesRepository } from './sales.repository';
 import { CustomersService } from '../customers/customers.service';
@@ -20,6 +20,7 @@ describe('SalesService', () => {
     salesRepo = {
       count: jest.fn().mockResolvedValue(0),
       findByInvoiceNumber: jest.fn().mockResolvedValue(null),
+      findByBillNumber: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockImplementation((d) => Promise.resolve({ _id: 'sale1', ...d })),
       findById: jest.fn().mockImplementation((id) => Promise.resolve({ _id: id, invoiceNumber: 'INV-1' } as any)),
       update: jest.fn(),
@@ -97,5 +98,19 @@ describe('SalesService', () => {
     );
     expect(productsService.atomicUpdateStock).toHaveBeenCalledWith('p1', -10);
     expect(customersService.updateFinancials).toHaveBeenCalledWith('c1', 6000, 0);
+  });
+
+  it('rejects a bill number that is already used before changing stock', async () => {
+    salesRepo.findByBillNumber.mockResolvedValueOnce({ _id: 'other' } as any);
+
+    await expect(
+      service.create({
+        customerId: 'c1',
+        billNumber: '8/60',
+        items: [{ productId: 'p1', quantity: 1, sellingPrice: 600 }],
+      }),
+    ).rejects.toThrow(ConflictException);
+
+    expect(productsService.atomicUpdateStock).not.toHaveBeenCalled();
   });
 });
