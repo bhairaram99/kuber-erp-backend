@@ -45,6 +45,17 @@ export class SalesRepository {
     return this.saleModel.findOne({ invoiceNumber: invoiceNumber.toUpperCase() }).exec();
   }
 
+  async findByBillNumber(billNumber: string, excludeId?: string): Promise<SaleDocument | null> {
+    const trimmed = billNumber.trim();
+    if (!trimmed) return null;
+    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const filter: FilterQuery<SaleDocument> = {
+      billNumber: { $regex: `^${escaped}$`, $options: 'i' },
+    };
+    if (excludeId) filter._id = { $ne: excludeId };
+    return this.saleModel.findOne(filter).exec();
+  }
+
   async create(data: Partial<Sale>): Promise<SaleDocument> {
     const created = new this.saleModel(data);
     return created.save();
